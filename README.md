@@ -6,12 +6,17 @@ hotkey to start/stop it.
 
 ## What it does
 
-- Enter (or capture) 3 screen coordinates.
-- While running, it visits each point in order and sends **two middle-mouse
-  clicks** at it, then moves to the next point.
-- Two adjustable delays:
-  - **Delay between points** — the main cycle timer.
+- Enter (or capture) up to 3 screen coordinates. Points 2 and 3 can be
+  switched off with the **On** checkbox next to each, so the app can be run
+  with just 1 or 2 points if you don't need all 3.
+- While running, it visits each active point in order and sends **two
+  middle-mouse clicks** at it, then moves to the next point.
+- Three adjustable delays:
+  - **Delay between points** — spacing between points within one set.
   - **Delay between the 2 clicks** at the same point.
+  - **Delay after full set** — how long to wait after the last active point
+    before starting the set over from the first point (e.g. click all 3
+    points, then wait 10 seconds before doing another pass).
 - **F6** toggles running on/off from anywhere, even if the window isn't
   focused. There's also an on-screen Toggle button.
 

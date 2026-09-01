@@ -14,6 +14,7 @@ from pynput.mouse import Button
 NUM_POINTS = 3
 DEFAULT_INTERVAL = 1.0
 DEFAULT_CLICK_GAP = 0.1
+DEFAULT_CYCLE_DELAY = 10.0
 POLL_SECONDS = 0.05
 CAPTURE_COUNTDOWN = 3
 
@@ -25,8 +26,10 @@ running_event = threading.Event()
 # aren't safe to access off the main thread.
 settings = {
     "points": [(0, 0) for _ in range(NUM_POINTS)],
+    "enabled": [True] * NUM_POINTS,
     "interval": DEFAULT_INTERVAL,
     "click_gap": DEFAULT_CLICK_GAP,
+    "cycle_delay": DEFAULT_CYCLE_DELAY,
 }
 
 
@@ -46,10 +49,19 @@ def worker_loop():
             continue
 
         points = settings["points"]
+        enabled = settings["enabled"]
+        active_points = [p for p, en in zip(points, enabled) if en]
         click_gap = settings["click_gap"]
         interval = settings["interval"]
+        cycle_delay = settings["cycle_delay"]
 
-        for x, y in points:
+        if not active_points:
+            time.sleep(POLL_SECONDS)
+            continue
+
+        last_index = len(active_points) - 1
+
+        for i, (x, y) in enumerate(active_points):
             if not running_event.is_set():
                 break
 
@@ -60,7 +72,10 @@ def worker_loop():
                 break
             mouse_controller.click(Button.middle)
 
-            wait_interruptible(interval)
+            # After the last point in the set, wait the longer cycle delay
+            # instead of the normal point-to-point interval before looping
+            # back to the first point.
+            wait_interruptible(cycle_delay if i == last_index else interval)
 
 
 class ClickToCoordsApp:
@@ -72,6 +87,8 @@ class ClickToCoordsApp:
         self.point_x_vars = []
         self.point_y_vars = []
         self.capture_labels = []
+        self.enabled_vars = [None] * NUM_POINTS
+        self.point_widgets = []
 
         main = ttk.Frame(root, padding=12)
         main.grid(row=0, column=0)
@@ -79,6 +96,7 @@ class ClickToCoordsApp:
         ttk.Label(main, text="Points (middle-clicked twice, in order)", font=("", 10, "bold")).grid(
             row=0, column=0, columnspan=4, sticky="w", pady=(0, 6)
         )
+        ttk.Label(main, text="On", font=("", 10, "bold")).grid(row=0, column=4, pady=(0, 6))
 
         for i in range(NUM_POINTS):
             row = i + 1
@@ -99,15 +117,26 @@ class ClickToCoordsApp:
 
             capture_label = tk.StringVar(value="Capture")
             self.capture_labels.append(capture_label)
-            ttk.Button(
+            capture_btn = ttk.Button(
                 main,
                 textvariable=capture_label,
                 command=lambda idx=i: self.start_capture(idx),
                 width=10,
-            ).grid(row=row, column=3, padx=(6, 0))
+            )
+            capture_btn.grid(row=row, column=3, padx=(6, 0))
+            self.point_widgets.append((x_entry, y_entry, capture_btn))
+
+            # Point 1 is always active (the tool needs at least one point);
+            # points 2 and 3 can be turned off to run with fewer points.
+            if i > 0:
+                enabled_var = tk.BooleanVar(value=True)
+                self.enabled_vars[i] = enabled_var
+                ttk.Checkbutton(
+                    main, variable=enabled_var, command=lambda idx=i: self.on_enabled_toggle(idx)
+                ).grid(row=row, column=4)
 
         sep = ttk.Separator(main, orient="horizontal")
-        sep.grid(row=NUM_POINTS + 1, column=0, columnspan=4, sticky="ew", pady=8)
+        sep.grid(row=NUM_POINTS + 1, column=0, columnspan=5, sticky="ew", pady=8)
 
         timer_row = NUM_POINTS + 2
         ttk.Label(main, text="Delay between points (s):").grid(row=timer_row, column=0, columnspan=2, sticky="w")
@@ -121,7 +150,13 @@ class ClickToCoordsApp:
         ttk.Entry(main, textvariable=self.click_gap_var, width=8).grid(row=gap_row, column=2, columnspan=2, sticky="w")
         self.click_gap_var.trace_add("write", lambda *_a: self.sync_settings())
 
-        status_row = gap_row + 1
+        cycle_row = gap_row + 1
+        ttk.Label(main, text="Delay after full set (s):").grid(row=cycle_row, column=0, columnspan=2, sticky="w")
+        self.cycle_delay_var = tk.StringVar(value=str(DEFAULT_CYCLE_DELAY))
+        ttk.Entry(main, textvariable=self.cycle_delay_var, width=8).grid(row=cycle_row, column=2, columnspan=2, sticky="w")
+        self.cycle_delay_var.trace_add("write", lambda *_a: self.sync_settings())
+
+        status_row = cycle_row + 1
         self.status_var = tk.StringVar(value="STOPPED")
         self.status_label = ttk.Label(main, textvariable=self.status_var, font=("", 11, "bold"))
         self.status_label.grid(row=status_row, column=0, columnspan=2, sticky="w", pady=(10, 0))
@@ -146,6 +181,13 @@ class ClickToCoordsApp:
         self.capture_labels[index].set(f"...{seconds_left}")
         self.root.after(1000, lambda: self._countdown(index, seconds_left - 1))
 
+    def on_enabled_toggle(self, index):
+        enabled_var = self.enabled_vars[index]
+        state = "normal" if enabled_var.get() else "disabled"
+        for widget in self.point_widgets[index]:
+            widget.configure(state=state)
+        self.sync_settings()
+
     def sync_settings(self):
         points = []
         for x_var, y_var in zip(self.point_x_vars, self.point_y_vars):
@@ -156,6 +198,9 @@ class ClickToCoordsApp:
                 x, y = 0, 0
             points.append((x, y))
         settings["points"] = points
+        settings["enabled"] = [
+            enabled_var.get() if enabled_var is not None else True for enabled_var in self.enabled_vars
+        ]
 
         try:
             settings["interval"] = max(0.0, float(self.interval_var.get()))
@@ -164,6 +209,11 @@ class ClickToCoordsApp:
 
         try:
             settings["click_gap"] = max(0.0, float(self.click_gap_var.get()))
+        except ValueError:
+            pass
+
+        try:
+            settings["cycle_delay"] = max(0.0, float(self.cycle_delay_var.get()))
         except ValueError:
             pass
 
