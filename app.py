@@ -4,6 +4,7 @@ Runs as a local desktop app (Tkinter GUI). Press F6 anywhere (even when this
 window isn't focused) to toggle continuous automation on/off, or \\ to run
 one pass through the active points a single time.
 """
+import random
 import threading
 import time
 import tkinter as tk
@@ -18,6 +19,8 @@ DEFAULT_CLICK_GAP = 0.1
 DEFAULT_CYCLE_DELAY = 10.0
 POLL_SECONDS = 0.05
 STATUS_REFRESH_MS = 150
+JITTER_MIN = 0.3
+JITTER_MAX = 0.5
 
 COLOR_RUNNING = "#2ecc71"
 COLOR_STOPPED = "#e74c3c"
@@ -68,6 +71,13 @@ def wait_interruptible(seconds):
         time.sleep(min(POLL_SECONDS, remaining))
 
 
+def jittered(seconds):
+    # Adds a random 0.3-0.5s on top of the configured delay so automated
+    # timing doesn't look perfectly mechanical - only ever adds, never
+    # subtracts from what the user configured.
+    return seconds + random.uniform(JITTER_MIN, JITTER_MAX)
+
+
 def click_active_points(wait_after_last):
     points = settings["points"]
     enabled = settings["enabled"]
@@ -86,7 +96,7 @@ def click_active_points(wait_after_last):
 
         mouse_controller.position = (x, y)
         mouse_controller.click(Button.middle)
-        wait_interruptible(click_gap)
+        wait_interruptible(jittered(click_gap))
         if not should_continue():
             break
         mouse_controller.click(Button.middle)
@@ -97,9 +107,9 @@ def click_active_points(wait_after_last):
             # before looping back to the first point - but only when a
             # continuous run will actually follow (single-shot stops here).
             if wait_after_last:
-                wait_interruptible(cycle_delay)
+                wait_interruptible(jittered(cycle_delay))
         else:
-            wait_interruptible(interval)
+            wait_interruptible(jittered(interval))
 
 
 def worker_loop():

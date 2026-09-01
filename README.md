@@ -18,6 +18,10 @@ hotkeys to start/stop it or run it once.
     before starting the set over from the first point (e.g. click all 3
     points, then wait 10 seconds before doing another pass). Not applied
     after a Single Use run, since there's no next pass to wait for.
+  - Every one of these delays gets an extra random **0.3-0.5s added** on
+    top each time it's waited on (independently, per wait) — this only
+    ever adds to the configured delay, never subtracts from it, so timing
+    doesn't look perfectly mechanical.
 - **F6** toggles continuous running on/off from anywhere, even if the
   window isn't focused. There's also an on-screen Toggle button.
 - **\\ (backslash)** runs one pass through the active points a single time,
