@@ -17,10 +17,10 @@ NUM_POINTS = 3
 DEFAULT_INTERVAL = 1.0
 DEFAULT_CLICK_GAP = 0.1
 DEFAULT_CYCLE_DELAY = 10.0
+DEFAULT_JITTER_MIN = 0.3
+DEFAULT_JITTER_MAX = 0.5
 POLL_SECONDS = 0.05
 STATUS_REFRESH_MS = 150
-JITTER_MIN = 0.3
-JITTER_MAX = 0.5
 
 COLOR_RUNNING = "#2ecc71"
 COLOR_STOPPED = "#e74c3c"
@@ -55,6 +55,8 @@ settings = {
     "interval": DEFAULT_INTERVAL,
     "click_gap": DEFAULT_CLICK_GAP,
     "cycle_delay": DEFAULT_CYCLE_DELAY,
+    "jitter_min": DEFAULT_JITTER_MIN,
+    "jitter_max": DEFAULT_JITTER_MAX,
 }
 
 
@@ -72,10 +74,12 @@ def wait_interruptible(seconds):
 
 
 def jittered(seconds):
-    # Adds a random 0.3-0.5s on top of the configured delay so automated
+    # Adds a random amount on top of the configured delay so automated
     # timing doesn't look perfectly mechanical - only ever adds, never
     # subtracts from what the user configured.
-    return seconds + random.uniform(JITTER_MIN, JITTER_MAX)
+    lo = settings["jitter_min"]
+    hi = max(lo, settings["jitter_max"])
+    return seconds + random.uniform(lo, hi)
 
 
 def click_active_points(wait_after_last):
@@ -210,7 +214,17 @@ class ClickToCoordsApp:
         ttk.Entry(main, textvariable=self.cycle_delay_var, width=8).grid(row=cycle_row, column=2, columnspan=2, sticky="w")
         self.cycle_delay_var.trace_add("write", lambda *_a: self.sync_settings())
 
-        status_row = cycle_row + 1
+        jitter_row = cycle_row + 1
+        ttk.Label(main, text="Random jitter added (s):").grid(row=jitter_row, column=0, columnspan=2, sticky="w")
+        self.jitter_min_var = tk.StringVar(value=str(DEFAULT_JITTER_MIN))
+        ttk.Entry(main, textvariable=self.jitter_min_var, width=5).grid(row=jitter_row, column=2, sticky="w")
+        ttk.Label(main, text="to").grid(row=jitter_row, column=3)
+        self.jitter_max_var = tk.StringVar(value=str(DEFAULT_JITTER_MAX))
+        ttk.Entry(main, textvariable=self.jitter_max_var, width=5).grid(row=jitter_row, column=4, sticky="w")
+        self.jitter_min_var.trace_add("write", lambda *_a: self.sync_settings())
+        self.jitter_max_var.trace_add("write", lambda *_a: self.sync_settings())
+
+        status_row = jitter_row + 1
         self.status_var = tk.StringVar(value="STOPPED")
         self.status_label = ttk.Label(main, textvariable=self.status_var, font=("", 11, "bold"))
         self.status_label.grid(row=status_row, column=0, columnspan=2, sticky="w", pady=(10, 0))
@@ -303,6 +317,16 @@ class ClickToCoordsApp:
 
         try:
             settings["cycle_delay"] = max(0.0, float(self.cycle_delay_var.get()))
+        except ValueError:
+            pass
+
+        try:
+            settings["jitter_min"] = max(0.0, float(self.jitter_min_var.get()))
+        except ValueError:
+            pass
+
+        try:
+            settings["jitter_max"] = max(0.0, float(self.jitter_max_var.get()))
         except ValueError:
             pass
 
