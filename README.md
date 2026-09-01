@@ -82,10 +82,15 @@ you like and run it directly.
 To do it by hand instead:
 
 ```bat
-pip install -r requirements.txt
-pip install -r requirements-build.txt
-pyinstaller --onefile --windowed --name ClickToCoords app.py
+python -m pip install -r requirements.txt
+python -m pip install -r requirements-build.txt
+python -m PyInstaller --onefile --windowed --name ClickToCoords app.py
 ```
+
+Using `python -m PyInstaller` (rather than the bare `pyinstaller` command)
+avoids "pyinstaller is not recognized" errors, which happen when pip
+installs its console scripts into a user Scripts folder that isn't on
+PATH — `python -m ...` always works since it doesn't depend on PATH at all.
 
 Windows Defender / SmartScreen may flag a freshly built, unsigned exe on
 first run ("Windows protected your PC") since it isn't code-signed — choose
