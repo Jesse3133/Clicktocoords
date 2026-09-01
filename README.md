@@ -31,9 +31,22 @@ python app.py
 
 ## Capturing coordinates
 
-Click a point's **Capture** button, then move your mouse to the target
-location within 3 seconds — the button counts down and records the mouse
-position when it reaches zero.
+Click a point's **Capture** button (it changes to "Click MMB"), then move
+your mouse to the target location and **middle-click**. That records the
+click's position into the point's X/Y fields. The click itself isn't
+suppressed, so it still acts as a normal middle click wherever it lands.
+Capture is disabled while the automation is running (starting the
+automation also cancels any capture in progress), since the automation's
+own middle clicks would otherwise get picked up as a capture.
+
+## Getting a pre-built .exe (GitHub Actions)
+
+Every push to `main` runs `.github/workflows/build-windows-exe.yml`, which
+builds on an actual `windows-latest` GitHub Actions runner and uploads the
+result. To grab it: open the repo's **Actions** tab → the latest "Build
+Windows exe" run → download the `ClickToCoords-windows-exe` artifact from
+the run summary (it's a zip containing `ClickToCoords.exe`). You can also
+trigger a build on demand from that workflow's page with **Run workflow**.
 
 ## Building a standalone .exe (Windows)
 

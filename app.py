@@ -16,7 +16,6 @@ DEFAULT_INTERVAL = 1.0
 DEFAULT_CLICK_GAP = 0.1
 DEFAULT_CYCLE_DELAY = 10.0
 POLL_SECONDS = 0.05
-CAPTURE_COUNTDOWN = 3
 
 mouse_controller = mouse.Controller()
 running_event = threading.Event()
@@ -89,6 +88,8 @@ class ClickToCoordsApp:
         self.capture_labels = []
         self.enabled_vars = [None] * NUM_POINTS
         self.point_widgets = []
+        self.capture_listener = None
+        self.capturing_index = None
 
         main = ttk.Frame(root, padding=12)
         main.grid(row=0, column=0)
@@ -169,24 +170,50 @@ class ClickToCoordsApp:
         self.sync_settings()
 
     def start_capture(self, index):
-        self._countdown(index, CAPTURE_COUNTDOWN)
+        self._cancel_capture()
 
-    def _countdown(self, index, seconds_left):
-        if seconds_left <= 0:
-            x, y = mouse_controller.position
-            self.point_x_vars[index].set(str(x))
-            self.point_y_vars[index].set(str(y))
-            self.capture_labels[index].set("Capture")
-            return
-        self.capture_labels[index].set(f"...{seconds_left}")
-        self.root.after(1000, lambda: self._countdown(index, seconds_left - 1))
+        self.capturing_index = index
+        self.capture_labels[index].set("Click MMB")
+
+        def on_click(x, y, button, pressed):
+            if button == Button.middle and pressed:
+                self.root.after(0, lambda: self._finish_capture(index, x, y))
+                return False  # stop the listener
+
+        listener = mouse.Listener(on_click=on_click)
+        self.capture_listener = listener
+        listener.start()
+
+    def _finish_capture(self, index, x, y):
+        self.point_x_vars[index].set(str(x))
+        self.point_y_vars[index].set(str(y))
+        self.capture_labels[index].set("Capture")
+        if self.capturing_index == index:
+            self.capturing_index = None
+            self.capture_listener = None
+
+    def _cancel_capture(self):
+        if self.capture_listener is not None:
+            self.capture_listener.stop()
+            self.capture_listener = None
+        if self.capturing_index is not None:
+            self.capture_labels[self.capturing_index].set("Capture")
+            self.capturing_index = None
 
     def on_enabled_toggle(self, index):
         enabled_var = self.enabled_vars[index]
         state = "normal" if enabled_var.get() else "disabled"
-        for widget in self.point_widgets[index]:
-            widget.configure(state=state)
+        x_entry, y_entry, _capture_btn = self.point_widgets[index]
+        x_entry.configure(state=state)
+        y_entry.configure(state=state)
+        if not enabled_var.get():
+            self._cancel_capture_if(index)
+        self.update_status_label()
         self.sync_settings()
+
+    def _cancel_capture_if(self, index):
+        if self.capturing_index == index:
+            self._cancel_capture()
 
     def sync_settings(self):
         points = []
@@ -221,16 +248,26 @@ class ClickToCoordsApp:
         if running_event.is_set():
             running_event.clear()
         else:
+            self._cancel_capture()
             running_event.set()
         self.update_status_label()
 
     def update_status_label(self):
-        if running_event.is_set():
+        running = running_event.is_set()
+        if running:
             self.status_var.set("RUNNING")
             self.status_label.configure(foreground="green")
         else:
             self.status_var.set("STOPPED")
             self.status_label.configure(foreground="red")
+
+        # Capture clashes with the automation's own synthetic clicks, so
+        # disable Capture buttons while running (respecting each point's
+        # own enabled/disabled state once stopped again).
+        for i, (_, _, capture_btn) in enumerate(self.point_widgets):
+            enabled_var = self.enabled_vars[i]
+            point_enabled = enabled_var is None or enabled_var.get()
+            capture_btn.configure(state="normal" if (point_enabled and not running) else "disabled")
 
 
 def main():
@@ -250,6 +287,7 @@ def main():
 
     def on_close():
         running_event.clear()
+        app._cancel_capture()
         hotkeys.stop()
         root.destroy()
 
