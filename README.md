@@ -31,6 +31,10 @@ hotkeys to start/stop it or run it once.
   button — click it again (or press \\ again) while it's running to cancel
   the pass early. Both are disabled while continuous automation is running.
 - A **Dark mode** checkbox switches the whole UI between light and dark.
+  Your choice is remembered between launches (stored in a small config
+  file under your user profile — `%APPDATA%\ClickToCoords\config.json` on
+  Windows, `~/.config/ClickToCoords/config.json` on Linux, `~/Library/
+  Application Support/ClickToCoords/config.json` on macOS).
 
 ## Setup
 

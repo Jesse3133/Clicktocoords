@@ -4,10 +4,14 @@ Runs as a local desktop app (Tkinter GUI). Press F6 anywhere (even when this
 window isn't focused) to toggle continuous automation on/off, or \\ to run
 one pass through the active points a single time.
 """
+import json
+import os
 import random
+import sys
 import threading
 import time
 import tkinter as tk
+from pathlib import Path
 from tkinter import ttk
 
 from pynput import keyboard, mouse
@@ -41,6 +45,36 @@ DARK_COLORS = {
     "button_bg": "#454545",
     "active_bg": "#565656",
 }
+
+def _config_path():
+    if sys.platform == "win32":
+        base = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
+    elif sys.platform == "darwin":
+        base = Path.home() / "Library" / "Application Support"
+    else:
+        base = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+    return base / "ClickToCoords" / "config.json"
+
+
+CONFIG_PATH = _config_path()
+
+
+def load_config():
+    try:
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def save_config(config):
+    try:
+        CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+            json.dump(config, f)
+    except OSError:
+        pass
+
 
 mouse_controller = mouse.Controller()
 running_event = threading.Event()
@@ -144,9 +178,12 @@ class ClickToCoordsApp:
         self.capture_listener = None
         self.capturing_index = None
 
+        self.config = load_config()
+        initial_dark = bool(self.config.get("dark_mode", False))
+
         self.style = ttk.Style(root)
-        self.dark_mode_var = tk.BooleanVar(value=False)
-        self.apply_theme(dark=False)
+        self.dark_mode_var = tk.BooleanVar(value=initial_dark)
+        self.apply_theme(dark=initial_dark)
 
         main = ttk.Frame(root, padding=12)
         main.grid(row=0, column=0)
@@ -379,7 +416,10 @@ class ClickToCoordsApp:
         self.single_shot_btn.configure(state="disabled" if running else "normal")
 
     def on_theme_toggle(self):
-        self.apply_theme(dark=self.dark_mode_var.get())
+        dark = self.dark_mode_var.get()
+        self.apply_theme(dark=dark)
+        self.config["dark_mode"] = dark
+        save_config(self.config)
 
     def apply_theme(self, dark):
         colors = DARK_COLORS if dark else LIGHT_COLORS
