@@ -1,7 +1,8 @@
 """ClickToCoords - cycles a middle-click pair across 3 saved screen coordinates.
 
 Runs as a local desktop app (Tkinter GUI). Press F6 anywhere (even when this
-window isn't focused) to toggle the automation on/off.
+window isn't focused) to toggle continuous automation on/off, or \\ to run
+one pass through the active points a single time.
 """
 import threading
 import time
@@ -16,9 +17,31 @@ DEFAULT_INTERVAL = 1.0
 DEFAULT_CLICK_GAP = 0.1
 DEFAULT_CYCLE_DELAY = 10.0
 POLL_SECONDS = 0.05
+STATUS_REFRESH_MS = 150
+
+COLOR_RUNNING = "#2ecc71"
+COLOR_STOPPED = "#e74c3c"
+
+LIGHT_COLORS = {
+    "bg": "#f0f0f0",
+    "fg": "#000000",
+    "entry_bg": "#ffffff",
+    "entry_fg": "#000000",
+    "button_bg": "#e1e1e1",
+    "active_bg": "#d0d0d0",
+}
+DARK_COLORS = {
+    "bg": "#2b2b2b",
+    "fg": "#e6e6e6",
+    "entry_bg": "#3c3c3c",
+    "entry_fg": "#e6e6e6",
+    "button_bg": "#454545",
+    "active_bg": "#565656",
+}
 
 mouse_controller = mouse.Controller()
 running_event = threading.Event()
+single_shot_event = threading.Event()
 
 # Plain-Python settings mirror of the GUI state. The worker thread reads
 # this instead of touching Tkinter variables directly, since Tk vars
@@ -32,49 +55,65 @@ settings = {
 }
 
 
+def should_continue():
+    return running_event.is_set() or single_shot_event.is_set()
+
+
 def wait_interruptible(seconds):
     deadline = time.time() + seconds
-    while running_event.is_set():
+    while should_continue():
         remaining = deadline - time.time()
         if remaining <= 0:
             return
         time.sleep(min(POLL_SECONDS, remaining))
 
 
+def click_active_points(wait_after_last):
+    points = settings["points"]
+    enabled = settings["enabled"]
+    active_points = [p for p, en in zip(points, enabled) if en]
+    if not active_points:
+        return
+
+    click_gap = settings["click_gap"]
+    interval = settings["interval"]
+    cycle_delay = settings["cycle_delay"]
+    last_index = len(active_points) - 1
+
+    for i, (x, y) in enumerate(active_points):
+        if not should_continue():
+            break
+
+        mouse_controller.position = (x, y)
+        mouse_controller.click(Button.middle)
+        wait_interruptible(click_gap)
+        if not should_continue():
+            break
+        mouse_controller.click(Button.middle)
+
+        is_last = i == last_index
+        if is_last:
+            # After the last point in the set, wait the longer cycle delay
+            # before looping back to the first point - but only when a
+            # continuous run will actually follow (single-shot stops here).
+            if wait_after_last:
+                wait_interruptible(cycle_delay)
+        else:
+            wait_interruptible(interval)
+
+
 def worker_loop():
     while True:
-        if not running_event.is_set():
-            time.sleep(POLL_SECONDS)
+        if running_event.is_set():
+            click_active_points(wait_after_last=True)
             continue
 
-        points = settings["points"]
-        enabled = settings["enabled"]
-        active_points = [p for p, en in zip(points, enabled) if en]
-        click_gap = settings["click_gap"]
-        interval = settings["interval"]
-        cycle_delay = settings["cycle_delay"]
-
-        if not active_points:
-            time.sleep(POLL_SECONDS)
+        if single_shot_event.is_set():
+            click_active_points(wait_after_last=False)
+            single_shot_event.clear()
             continue
 
-        last_index = len(active_points) - 1
-
-        for i, (x, y) in enumerate(active_points):
-            if not running_event.is_set():
-                break
-
-            mouse_controller.position = (x, y)
-            mouse_controller.click(Button.middle)
-            wait_interruptible(click_gap)
-            if not running_event.is_set():
-                break
-            mouse_controller.click(Button.middle)
-
-            # After the last point in the set, wait the longer cycle delay
-            # instead of the normal point-to-point interval before looping
-            # back to the first point.
-            wait_interruptible(cycle_delay if i == last_index else interval)
+        time.sleep(POLL_SECONDS)
 
 
 class ClickToCoordsApp:
@@ -90,6 +129,10 @@ class ClickToCoordsApp:
         self.point_widgets = []
         self.capture_listener = None
         self.capturing_index = None
+
+        self.style = ttk.Style(root)
+        self.dark_mode_var = tk.BooleanVar(value=False)
+        self.apply_theme(dark=False)
 
         main = ttk.Frame(root, padding=12)
         main.grid(row=0, column=0)
@@ -166,7 +209,16 @@ class ClickToCoordsApp:
             row=status_row, column=2, columnspan=2, pady=(10, 0), sticky="e"
         )
 
-        self.update_status_label()
+        single_shot_row = status_row + 1
+        self.single_shot_btn = ttk.Button(main, text="Single Use (\\)", command=self.run_single_shot)
+        self.single_shot_btn.grid(row=single_shot_row, column=0, columnspan=5, pady=(6, 0), sticky="ew")
+
+        theme_row = single_shot_row + 1
+        ttk.Checkbutton(
+            main, text="Dark mode", variable=self.dark_mode_var, command=self.on_theme_toggle
+        ).grid(row=theme_row, column=0, columnspan=5, sticky="w", pady=(8, 0))
+
+        self._refresh_status()
         self.sync_settings()
 
     def start_capture(self, index):
@@ -249,25 +301,74 @@ class ClickToCoordsApp:
             running_event.clear()
         else:
             self._cancel_capture()
+            single_shot_event.clear()
             running_event.set()
         self.update_status_label()
 
+    def run_single_shot(self):
+        if single_shot_event.is_set():
+            single_shot_event.clear()  # a click of the button/hotkey again cancels it
+        elif not running_event.is_set():
+            self._cancel_capture()
+            single_shot_event.set()
+        self.update_status_label()
+
+    def _refresh_status(self):
+        self.update_status_label()
+        self.root.after(STATUS_REFRESH_MS, self._refresh_status)
+
     def update_status_label(self):
         running = running_event.is_set()
+        single_shot_active = single_shot_event.is_set()
+        busy = running or single_shot_active
+
         if running:
             self.status_var.set("RUNNING")
-            self.status_label.configure(foreground="green")
+            self.status_label.configure(foreground=COLOR_RUNNING)
+        elif single_shot_active:
+            self.status_var.set("RUNNING (once)")
+            self.status_label.configure(foreground=COLOR_RUNNING)
         else:
             self.status_var.set("STOPPED")
-            self.status_label.configure(foreground="red")
+            self.status_label.configure(foreground=COLOR_STOPPED)
 
         # Capture clashes with the automation's own synthetic clicks, so
-        # disable Capture buttons while running (respecting each point's
-        # own enabled/disabled state once stopped again).
+        # disable Capture buttons while busy (respecting each point's own
+        # enabled/disabled state once stopped again).
         for i, (_, _, capture_btn) in enumerate(self.point_widgets):
             enabled_var = self.enabled_vars[i]
             point_enabled = enabled_var is None or enabled_var.get()
-            capture_btn.configure(state="normal" if (point_enabled and not running) else "disabled")
+            capture_btn.configure(state="normal" if (point_enabled and not busy) else "disabled")
+
+        # Single Use stays clickable during its own run (to allow cancelling
+        # it), but not while continuous automation is running.
+        self.single_shot_btn.configure(state="disabled" if running else "normal")
+
+    def on_theme_toggle(self):
+        self.apply_theme(dark=self.dark_mode_var.get())
+
+    def apply_theme(self, dark):
+        colors = DARK_COLORS if dark else LIGHT_COLORS
+        style = self.style
+        style.theme_use("clam")
+        style.configure(".", background=colors["bg"], foreground=colors["fg"])
+        style.configure("TFrame", background=colors["bg"])
+        style.configure("TLabel", background=colors["bg"], foreground=colors["fg"])
+        style.configure("TCheckbutton", background=colors["bg"], foreground=colors["fg"])
+        style.map("TCheckbutton", background=[("active", colors["bg"])])
+        style.configure("TSeparator", background=colors["bg"])
+        style.configure(
+            "TButton", background=colors["button_bg"], foreground=colors["fg"], bordercolor=colors["bg"]
+        )
+        style.map("TButton", background=[("active", colors["active_bg"]), ("disabled", colors["bg"])])
+        style.configure(
+            "TEntry",
+            fieldbackground=colors["entry_bg"],
+            foreground=colors["entry_fg"],
+            insertcolor=colors["fg"],
+        )
+        style.map("TEntry", fieldbackground=[("disabled", colors["bg"])])
+        self.root.configure(background=colors["bg"])
 
 
 def main():
@@ -279,7 +380,10 @@ def main():
     def handle_toggle():
         root.after(0, app.toggle)
 
-    hotkeys = keyboard.GlobalHotKeys({"<f6>": handle_toggle})
+    def handle_single_shot():
+        root.after(0, app.run_single_shot)
+
+    hotkeys = keyboard.GlobalHotKeys({"<f6>": handle_toggle, "\\": handle_single_shot})
     hotkeys.start()
 
     worker = threading.Thread(target=worker_loop, daemon=True)

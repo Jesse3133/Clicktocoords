@@ -1,8 +1,8 @@
 # ClickToCoords
 
 A local desktop app (Tkinter, no browser) that cycles a double middle-click
-across 3 saved screen coordinates on a repeating timer, with a global **F6**
-hotkey to start/stop it.
+across 3 saved screen coordinates on a repeating timer, with global
+hotkeys to start/stop it or run it once.
 
 ## What it does
 
@@ -16,9 +16,15 @@ hotkey to start/stop it.
   - **Delay between the 2 clicks** at the same point.
   - **Delay after full set** — how long to wait after the last active point
     before starting the set over from the first point (e.g. click all 3
-    points, then wait 10 seconds before doing another pass).
-- **F6** toggles running on/off from anywhere, even if the window isn't
-  focused. There's also an on-screen Toggle button.
+    points, then wait 10 seconds before doing another pass). Not applied
+    after a Single Use run, since there's no next pass to wait for.
+- **F6** toggles continuous running on/off from anywhere, even if the
+  window isn't focused. There's also an on-screen Toggle button.
+- **\\ (backslash)** runs one pass through the active points a single time,
+  then stops automatically. There's also an on-screen **Single Use**
+  button — click it again (or press \\ again) while it's running to cancel
+  the pass early. Both are disabled while continuous automation is running.
+- A **Dark mode** checkbox switches the whole UI between light and dark.
 
 ## Setup
 
