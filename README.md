@@ -17,7 +17,9 @@ hotkeys to start/stop it or run it once.
   - **Delay after full set** — how long to wait after the last active point
     before starting the set over from the first point (e.g. click all 3
     points, then wait 10 seconds before doing another pass). Not applied
-    after a Single Use run, since there's no next pass to wait for.
+    after a Single Use run, since there's no next pass to wait for. A live
+    countdown ("Next set in Xs") shows in the bottom-right of the window
+    while this wait is in progress.
   - Every one of these delays gets an extra random amount added on top
     each time it's waited on (independently, per wait) — configurable via
     the **Random jitter added (s)** min/max fields (default 0.3 to 0.5).

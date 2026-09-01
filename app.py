@@ -80,6 +80,10 @@ mouse_controller = mouse.Controller()
 running_event = threading.Event()
 single_shot_event = threading.Event()
 
+# Updated by the worker thread whenever it's waiting the "delay after full
+# set" gap between passes, so the GUI can show a live countdown for it.
+cycle_wait_info = {"active": False, "deadline": 0.0}
+
 # Plain-Python settings mirror of the GUI state. The worker thread reads
 # this instead of touching Tkinter variables directly, since Tk vars
 # aren't safe to access off the main thread.
@@ -145,7 +149,11 @@ def click_active_points(wait_after_last):
             # before looping back to the first point - but only when a
             # continuous run will actually follow (single-shot stops here).
             if wait_after_last:
-                wait_interruptible(jittered(cycle_delay))
+                delay = jittered(cycle_delay)
+                cycle_wait_info["deadline"] = time.time() + delay
+                cycle_wait_info["active"] = True
+                wait_interruptible(delay)
+                cycle_wait_info["active"] = False
         else:
             wait_interruptible(jittered(interval))
 
@@ -279,6 +287,11 @@ class ClickToCoordsApp:
             main, text="Dark mode", variable=self.dark_mode_var, command=self.on_theme_toggle
         ).grid(row=theme_row, column=0, columnspan=5, sticky="w", pady=(8, 0))
 
+        countdown_row = theme_row + 1
+        self.countdown_var = tk.StringVar(value="")
+        self.countdown_label = ttk.Label(main, textvariable=self.countdown_var, font=("", 9))
+        self.countdown_label.grid(row=countdown_row, column=0, columnspan=5, sticky="e", pady=(6, 0))
+
         self._refresh_status()
         self.sync_settings()
 
@@ -386,7 +399,15 @@ class ClickToCoordsApp:
 
     def _refresh_status(self):
         self.update_status_label()
+        self._update_countdown()
         self.root.after(STATUS_REFRESH_MS, self._refresh_status)
+
+    def _update_countdown(self):
+        if cycle_wait_info["active"]:
+            remaining = max(0.0, cycle_wait_info["deadline"] - time.time())
+            self.countdown_var.set(f"Next set in {remaining:.1f}s")
+        else:
+            self.countdown_var.set("")
 
     def update_status_label(self):
         running = running_event.is_set()
