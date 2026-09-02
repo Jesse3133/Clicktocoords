@@ -103,7 +103,11 @@ dots_ready_event = threading.Event()
 
 def hide_dots_before_click():
     app = gui_app_ref["app"]
-    if app is None:
+    if app is None or not app.show_dots_var.get():
+        # Dots disabled entirely: skip the whole hide/show handshake, so
+        # this is a guaranteed zero-overhead direct click with no GUI
+        # interaction at all - a hard fallback if the dot overlay is ever
+        # suspected of interfering with click delivery.
         return
     dots_ready_event.clear()
 
@@ -120,7 +124,7 @@ def hide_dots_before_click():
 
 def show_dots_after_click():
     app = gui_app_ref["app"]
-    if app is None:
+    if app is None or not app.show_dots_var.get():
         return
     try:
         app.root.after(0, app.show_dots)
@@ -136,25 +140,36 @@ def click_with_dots_hidden(click_button):
         show_dots_after_click()
 
 
-def make_window_click_through(hwnd):
-    # Belt-and-suspenders on top of the hide-before-click handshake above:
-    # on Windows, mark the dot window WS_EX_TRANSPARENT so it structurally
-    # cannot receive mouse input at the OS level, regardless of visibility
-    # or timing - clicks always pass straight through it. No equivalent
-    # exists via plain Tkinter on other platforms.
-    if sys.platform != "win32":
-        return
+def setup_windows_dot_overlay(hwnd, transparent_color_hex):
+    # On Windows we manage the layered window ourselves via ctypes - both
+    # the color-key transparency (for the round look) and WS_EX_TRANSPARENT
+    # click-through (belt-and-suspenders on top of the hide-before-click
+    # handshake, so the dot structurally can't intercept mouse input
+    # regardless of timing). These must be set up together in one place:
+    # mixing this with Tk's own "-transparentcolor" attribute handling left
+    # the window's layered surface undefined, rendering as an opaque black
+    # box instead of transparent-cornered.
     try:
         import ctypes
 
         GWL_EXSTYLE = -20
         WS_EX_LAYERED = 0x00080000
         WS_EX_TRANSPARENT = 0x00000020
+        LWA_COLORKEY = 0x00000001
+
         user32 = ctypes.windll.user32
         get_style = getattr(user32, "GetWindowLongPtrW", user32.GetWindowLongW)
         set_style = getattr(user32, "SetWindowLongPtrW", user32.SetWindowLongW)
+
         style = get_style(hwnd, GWL_EXSTYLE)
         set_style(hwnd, GWL_EXSTYLE, style | WS_EX_LAYERED | WS_EX_TRANSPARENT)
+
+        hexcolor = transparent_color_hex.lstrip("#")
+        r = int(hexcolor[0:2], 16)
+        g = int(hexcolor[2:4], 16)
+        b = int(hexcolor[4:6], 16)
+        colorref = (b << 16) | (g << 8) | r  # Windows COLORREF is 0x00BBGGRR
+        user32.SetLayeredWindowAttributes(hwnd, colorref, 0, LWA_COLORKEY)
     except OSError:
         pass
 
@@ -378,7 +393,13 @@ class ClickToCoordsApp:
             main, text="Dark mode", variable=self.dark_mode_var, command=self.on_theme_toggle
         ).grid(row=theme_row, column=0, columnspan=5, sticky="w", pady=(8, 0))
 
-        countdown_row = theme_row + 1
+        dots_row = theme_row + 1
+        self.show_dots_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(
+            main, text="Show target dots", variable=self.show_dots_var, command=self._update_dots
+        ).grid(row=dots_row, column=0, columnspan=5, sticky="w")
+
+        countdown_row = dots_row + 1
         self.countdown_var = tk.StringVar(value="")
         self.countdown_label = ttk.Label(main, textvariable=self.countdown_var, font=("", 9))
         self.countdown_label.grid(row=countdown_row, column=0, columnspan=5, sticky="e", pady=(6, 0))
@@ -392,29 +413,36 @@ class ClickToCoordsApp:
             dot = tk.Toplevel(self.root)
             dot.overrideredirect(True)
             dot.attributes("-topmost", True)
-            try:
-                dot.attributes("-transparentcolor", DOT_TRANSPARENT_KEY)
-                canvas_bg = DOT_TRANSPARENT_KEY
-            except tk.TclError:
-                # -transparentcolor is Windows-only; other platforms fall
-                # back to a plain small square background.
-                canvas_bg = DOT_COLOR
+
+            canvas_bg = DOT_TRANSPARENT_KEY
+            if sys.platform != "win32":
+                try:
+                    dot.attributes("-transparentcolor", DOT_TRANSPARENT_KEY)
+                except tk.TclError:
+                    # -transparentcolor isn't available on this platform;
+                    # fall back to a plain small square background.
+                    canvas_bg = DOT_COLOR
+
             dot.configure(background=canvas_bg)
             canvas = tk.Canvas(dot, width=DOT_SIZE, height=DOT_SIZE, highlightthickness=0, bg=canvas_bg)
             canvas.pack()
             canvas.create_oval(1, 1, DOT_SIZE - 1, DOT_SIZE - 1, fill=DOT_COLOR, outline="")
-            dot.update_idletasks()  # realize the native window so winfo_id() is valid
-            make_window_click_through(dot.winfo_id())
+
+            if sys.platform == "win32":
+                dot.update_idletasks()  # realize the native window so winfo_id() is valid
+                setup_windows_dot_overlay(dot.winfo_id(), DOT_TRANSPARENT_KEY)
+
             dot.withdraw()
             self.dot_windows.append(dot)
 
     def _update_dots(self):
+        show = self.show_dots_var.get()
         busy = running_event.is_set() or single_shot_event.is_set()
         points = settings["points"]
         enabled = settings["enabled"]
         half = DOT_SIZE // 2
         for i, dot in enumerate(self.dot_windows):
-            if busy and enabled[i]:
+            if show and busy and enabled[i]:
                 x, y = points[i]
                 dot.geometry(f"{DOT_SIZE}x{DOT_SIZE}+{x - half}+{y - half}")
                 dot.deiconify()
