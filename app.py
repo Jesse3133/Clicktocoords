@@ -584,6 +584,31 @@ class ClickToCoordsApp:
             insertcolor=colors["fg"],
         )
         style.map("TEntry", fieldbackground=[("disabled", colors["bg"])])
+        style.configure(
+            "TCombobox",
+            fieldbackground=colors["entry_bg"],
+            background=colors["button_bg"],
+            foreground=colors["entry_fg"],
+            arrowcolor=colors["fg"],
+            selectbackground=colors["entry_bg"],
+            selectforeground=colors["entry_fg"],
+        )
+        # The combobox is used with state="readonly", and clam's default
+        # readonly styling overrides the base colors above unless the
+        # "readonly" state is mapped explicitly too - otherwise it falls
+        # back to a light, un-themed field background.
+        style.map(
+            "TCombobox",
+            fieldbackground=[("readonly", colors["entry_bg"])],
+            foreground=[("readonly", colors["entry_fg"])],
+            background=[("readonly", colors["button_bg"])],
+        )
+        # The dropdown's popdown listbox isn't a themed ttk widget, so it's
+        # colored via the Tk option database instead of ttk.Style.
+        self.root.option_add("*TCombobox*Listbox.background", colors["entry_bg"])
+        self.root.option_add("*TCombobox*Listbox.foreground", colors["entry_fg"])
+        self.root.option_add("*TCombobox*Listbox.selectBackground", colors["active_bg"])
+        self.root.option_add("*TCombobox*Listbox.selectForeground", colors["fg"])
         self.root.configure(background=colors["bg"])
 
 
