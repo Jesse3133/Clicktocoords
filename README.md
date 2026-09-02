@@ -26,7 +26,10 @@ hotkeys to start/stop it or run it once.
   The dot briefly (well under 1ms) hides for the literal instant of each
   click and reappears immediately after — otherwise, since the automation
   clicks by injecting input at screen coordinates, its own always-on-top
-  marker would end up intercepting the very click it's marking.
+  marker would end up intercepting the very click it's marking. On
+  Windows it's additionally marked click-through at the OS level
+  (`WS_EX_TRANSPARENT`), so it structurally can't intercept a click even
+  if that timing were ever off.
 - Three adjustable delays:
   - **Delay between points** — spacing between points within one set.
   - **Delay between the 2 clicks** at the same point.

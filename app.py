@@ -135,6 +135,30 @@ def click_with_dots_hidden(click_button):
     finally:
         show_dots_after_click()
 
+
+def make_window_click_through(hwnd):
+    # Belt-and-suspenders on top of the hide-before-click handshake above:
+    # on Windows, mark the dot window WS_EX_TRANSPARENT so it structurally
+    # cannot receive mouse input at the OS level, regardless of visibility
+    # or timing - clicks always pass straight through it. No equivalent
+    # exists via plain Tkinter on other platforms.
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        GWL_EXSTYLE = -20
+        WS_EX_LAYERED = 0x00080000
+        WS_EX_TRANSPARENT = 0x00000020
+        user32 = ctypes.windll.user32
+        get_style = getattr(user32, "GetWindowLongPtrW", user32.GetWindowLongW)
+        set_style = getattr(user32, "SetWindowLongPtrW", user32.SetWindowLongW)
+        style = get_style(hwnd, GWL_EXSTYLE)
+        set_style(hwnd, GWL_EXSTYLE, style | WS_EX_LAYERED | WS_EX_TRANSPARENT)
+    except OSError:
+        pass
+
+
 # Plain-Python settings mirror of the GUI state. The worker thread reads
 # this instead of touching Tkinter variables directly, since Tk vars
 # aren't safe to access off the main thread.
@@ -379,6 +403,8 @@ class ClickToCoordsApp:
             canvas = tk.Canvas(dot, width=DOT_SIZE, height=DOT_SIZE, highlightthickness=0, bg=canvas_bg)
             canvas.pack()
             canvas.create_oval(1, 1, DOT_SIZE - 1, DOT_SIZE - 1, fill=DOT_COLOR, outline="")
+            dot.update_idletasks()  # realize the native window so winfo_id() is valid
+            make_window_click_through(dot.winfo_id())
             dot.withdraw()
             self.dot_windows.append(dot)
 
