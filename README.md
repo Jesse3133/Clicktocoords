@@ -16,6 +16,17 @@ hotkeys to start/stop it or run it once.
   non-disruptive gesture for just marking a location on screen.
 - While running, it visits each active point in order and sends **two
   clicks** (with the selected button) at it, then moves to the next point.
+- A small **red dot** marks each active point on screen the whole time the
+  automation is running (continuous or Single Use) — always on top of
+  other windows, and only for enabled points. It disappears the instant
+  you stop. On Windows the dot renders as a transparent-cornered circle;
+  on other platforms it falls back to a small solid square, since the
+  window transparency trick it uses is Windows-only.
+
+  The dot briefly (well under 1ms) hides for the literal instant of each
+  click and reappears immediately after — otherwise, since the automation
+  clicks by injecting input at screen coordinates, its own always-on-top
+  marker would end up intercepting the very click it's marking.
 - Three adjustable delays:
   - **Delay between points** — spacing between points within one set.
   - **Delay between the 2 clicks** at the same point.

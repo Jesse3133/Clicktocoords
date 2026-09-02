@@ -28,6 +28,10 @@ DEFAULT_JITTER_MIN = 0.3
 DEFAULT_JITTER_MAX = 0.5
 POLL_SECONDS = 0.05
 STATUS_REFRESH_MS = 150
+DOT_SIZE = 14
+DOT_COLOR = "#ff2b2b"
+DOT_TRANSPARENT_KEY = "#123456"  # arbitrary magic color; Windows-only -transparentcolor
+DOT_HIDE_TIMEOUT = 0.05
 
 COLOR_RUNNING = "#2ecc71"
 COLOR_STOPPED = "#e74c3c"
@@ -87,6 +91,50 @@ single_shot_event = threading.Event()
 # set" gap between passes, so the GUI can show a live countdown for it.
 cycle_wait_info = {"active": False, "deadline": 0.0}
 
+# Set once the GUI app exists, so the worker thread can ask it to hide/show
+# the target-marker dots. Since the automation's clicks are OS-level input
+# injected at screen coordinates, an always-on-top dot sitting exactly on
+# the target pixel would otherwise intercept the automation's own clicks -
+# so each click is wrapped with a synchronous hide (confirmed via
+# dots_ready_event before the click fires) and an immediate show after.
+gui_app_ref = {"app": None}
+dots_ready_event = threading.Event()
+
+
+def hide_dots_before_click():
+    app = gui_app_ref["app"]
+    if app is None:
+        return
+    dots_ready_event.clear()
+
+    def _do_hide():
+        app.hide_dots()
+        dots_ready_event.set()
+
+    try:
+        app.root.after(0, _do_hide)
+    except RuntimeError:
+        return
+    dots_ready_event.wait(DOT_HIDE_TIMEOUT)
+
+
+def show_dots_after_click():
+    app = gui_app_ref["app"]
+    if app is None:
+        return
+    try:
+        app.root.after(0, app.show_dots)
+    except RuntimeError:
+        pass
+
+
+def click_with_dots_hidden(click_button):
+    hide_dots_before_click()
+    try:
+        mouse_controller.click(click_button)
+    finally:
+        show_dots_after_click()
+
 # Plain-Python settings mirror of the GUI state. The worker thread reads
 # this instead of touching Tkinter variables directly, since Tk vars
 # aren't safe to access off the main thread.
@@ -142,11 +190,11 @@ def click_active_points(wait_after_last):
             break
 
         mouse_controller.position = (x, y)
-        mouse_controller.click(click_button)
+        click_with_dots_hidden(click_button)
         wait_interruptible(jittered(click_gap))
         if not should_continue():
             break
-        mouse_controller.click(click_button)
+        click_with_dots_hidden(click_button)
 
         is_last = i == last_index
         if is_last:
@@ -190,6 +238,7 @@ class ClickToCoordsApp:
         self.point_widgets = []
         self.capture_listener = None
         self.capturing_index = None
+        self.dot_windows = []
 
         self.config = load_config()
         initial_dark = bool(self.config.get("dark_mode", False))
@@ -310,8 +359,56 @@ class ClickToCoordsApp:
         self.countdown_label = ttk.Label(main, textvariable=self.countdown_var, font=("", 9))
         self.countdown_label.grid(row=countdown_row, column=0, columnspan=5, sticky="e", pady=(6, 0))
 
+        self._create_dots()
         self._refresh_status()
         self.sync_settings()
+
+    def _create_dots(self):
+        for _ in range(NUM_POINTS):
+            dot = tk.Toplevel(self.root)
+            dot.overrideredirect(True)
+            dot.attributes("-topmost", True)
+            try:
+                dot.attributes("-transparentcolor", DOT_TRANSPARENT_KEY)
+                canvas_bg = DOT_TRANSPARENT_KEY
+            except tk.TclError:
+                # -transparentcolor is Windows-only; other platforms fall
+                # back to a plain small square background.
+                canvas_bg = DOT_COLOR
+            dot.configure(background=canvas_bg)
+            canvas = tk.Canvas(dot, width=DOT_SIZE, height=DOT_SIZE, highlightthickness=0, bg=canvas_bg)
+            canvas.pack()
+            canvas.create_oval(1, 1, DOT_SIZE - 1, DOT_SIZE - 1, fill=DOT_COLOR, outline="")
+            dot.withdraw()
+            self.dot_windows.append(dot)
+
+    def _update_dots(self):
+        busy = running_event.is_set() or single_shot_event.is_set()
+        points = settings["points"]
+        enabled = settings["enabled"]
+        half = DOT_SIZE // 2
+        for i, dot in enumerate(self.dot_windows):
+            if busy and enabled[i]:
+                x, y = points[i]
+                dot.geometry(f"{DOT_SIZE}x{DOT_SIZE}+{x - half}+{y - half}")
+                dot.deiconify()
+            else:
+                dot.withdraw()
+
+    def hide_dots(self):
+        for dot in self.dot_windows:
+            try:
+                dot.withdraw()
+            except tk.TclError:
+                pass
+
+    def show_dots(self):
+        # Restores only the dots that should currently be visible (running
+        # and enabled), rather than blindly showing all of them.
+        try:
+            self._update_dots()
+        except tk.TclError:
+            pass
 
     def start_capture(self, index):
         self._cancel_capture()
@@ -409,6 +506,7 @@ class ClickToCoordsApp:
             single_shot_event.clear()
             running_event.set()
         self.update_status_label()
+        self._update_dots()
 
     def run_single_shot(self):
         if single_shot_event.is_set():
@@ -417,10 +515,12 @@ class ClickToCoordsApp:
             self._cancel_capture()
             single_shot_event.set()
         self.update_status_label()
+        self._update_dots()
 
     def _refresh_status(self):
         self.update_status_label()
         self._update_countdown()
+        self._update_dots()
         self.root.after(STATUS_REFRESH_MS, self._refresh_status)
 
     def _update_countdown(self):
@@ -490,6 +590,7 @@ class ClickToCoordsApp:
 def main():
     root = tk.Tk()
     app = ClickToCoordsApp(root)
+    gui_app_ref["app"] = app
 
     # Hotkey callbacks run on the pynput listener thread, so marshal the
     # GUI update back onto the Tk main thread via root.after.
@@ -508,6 +609,7 @@ def main():
     def on_close():
         running_event.clear()
         app._cancel_capture()
+        gui_app_ref["app"] = None
         hotkeys.stop()
         root.destroy()
 
