@@ -151,6 +151,7 @@ def setup_windows_dot_overlay(hwnd, transparent_color_hex):
     # box instead of transparent-cornered.
     try:
         import ctypes
+        from ctypes import wintypes
 
         GWL_EXSTYLE = -20
         WS_EX_LAYERED = 0x00080000
@@ -158,19 +159,47 @@ def setup_windows_dot_overlay(hwnd, transparent_color_hex):
         LWA_COLORKEY = 0x00000001
 
         user32 = ctypes.windll.user32
-        get_style = getattr(user32, "GetWindowLongPtrW", user32.GetWindowLongW)
-        set_style = getattr(user32, "SetWindowLongPtrW", user32.SetWindowLongW)
 
-        style = get_style(hwnd, GWL_EXSTYLE)
-        set_style(hwnd, GWL_EXSTYLE, style | WS_EX_LAYERED | WS_EX_TRANSPARENT)
+        # GetWindowLongPtrW/SetWindowLongPtrW deal in LONG_PTR - pointer
+        # sized (64-bit on 64-bit Windows). ctypes assumes a 32-bit C int
+        # for any call whose argtypes/restype aren't declared explicitly,
+        # which silently truncates/corrupts these values on 64-bit
+        # Windows - so the previous version of this code never actually
+        # applied the style bits correctly. LONG_PTR here uses c_ssize_t,
+        # a signed pointer-sized integer, matching it on both 32- and
+        # 64-bit builds.
+        has_ptr_variant = hasattr(user32, "GetWindowLongPtrW")
+        get_style_fn = user32.GetWindowLongPtrW if has_ptr_variant else user32.GetWindowLongW
+        set_style_fn = user32.SetWindowLongPtrW if has_ptr_variant else user32.SetWindowLongW
+        LONG_PTR = ctypes.c_ssize_t
+
+        get_style_fn.restype = LONG_PTR
+        get_style_fn.argtypes = [wintypes.HWND, ctypes.c_int]
+        set_style_fn.restype = LONG_PTR
+        set_style_fn.argtypes = [wintypes.HWND, ctypes.c_int, LONG_PTR]
+
+        style = get_style_fn(hwnd, GWL_EXSTYLE)
+        set_style_fn(hwnd, GWL_EXSTYLE, style | WS_EX_LAYERED | WS_EX_TRANSPARENT)
 
         hexcolor = transparent_color_hex.lstrip("#")
         r = int(hexcolor[0:2], 16)
         g = int(hexcolor[2:4], 16)
         b = int(hexcolor[4:6], 16)
         colorref = (b << 16) | (g << 8) | r  # Windows COLORREF is 0x00BBGGRR
+
+        user32.SetLayeredWindowAttributes.restype = wintypes.BOOL
+        user32.SetLayeredWindowAttributes.argtypes = [
+            wintypes.HWND,
+            wintypes.COLORREF,
+            ctypes.c_ubyte,
+            wintypes.DWORD,
+        ]
         user32.SetLayeredWindowAttributes(hwnd, colorref, 0, LWA_COLORKEY)
-    except OSError:
+    except Exception:
+        # This is optional cosmetic/safety behavior layered on top of the
+        # hide-before-click handshake - it must never be able to crash
+        # app startup (e.g. on a ctypes signature mismatch) or take down
+        # the automation itself.
         pass
 
 
@@ -394,7 +423,11 @@ class ClickToCoordsApp:
         ).grid(row=theme_row, column=0, columnspan=5, sticky="w", pady=(8, 0))
 
         dots_row = theme_row + 1
-        self.show_dots_var = tk.BooleanVar(value=True)
+        # Defaults off: confirmed in practice that the dot overlay can
+        # intercept the automation's own clicks on Windows even with the
+        # click-through safeguards in place, so reliable clicking (the
+        # app's actual purpose) takes priority - this is opt-in.
+        self.show_dots_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(
             main, text="Show target dots", variable=self.show_dots_var, command=self._update_dots
         ).grid(row=dots_row, column=0, columnspan=5, sticky="w")
