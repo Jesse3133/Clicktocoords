@@ -1,6 +1,6 @@
 # ClickToCoords
 
-A local desktop app (Tkinter, no browser) that cycles a double middle-click
+A local desktop app (Tkinter, no browser) that cycles a double click
 across 3 saved screen coordinates on a repeating timer, with global
 hotkeys to start/stop it or run it once.
 
@@ -9,8 +9,13 @@ hotkeys to start/stop it or run it once.
 - Enter (or capture) up to 3 screen coordinates. Points 2 and 3 can be
   switched off with the **On** checkbox next to each, so the app can be run
   with just 1 or 2 points if you don't need all 3.
+- A **Click button** dropdown picks which mouse button the automation
+  clicks with — Left, Middle, or Right (default Middle). This only affects
+  the automated clicks; capturing a point's coordinates (below) always
+  uses a middle-click regardless of this setting, since it's a safer,
+  non-disruptive gesture for just marking a location on screen.
 - While running, it visits each active point in order and sends **two
-  middle-mouse clicks** at it, then moves to the next point.
+  clicks** (with the selected button) at it, then moves to the next point.
 - Three adjustable delays:
   - **Delay between points** — spacing between points within one set.
   - **Delay between the 2 clicks** at the same point.
@@ -54,8 +59,9 @@ your mouse to the target location and **middle-click**. That records the
 click's position into the point's X/Y fields. The click itself isn't
 suppressed, so it still acts as a normal middle click wherever it lands.
 Capture is disabled while the automation is running (starting the
-automation also cancels any capture in progress), since the automation's
-own middle clicks would otherwise get picked up as a capture.
+automation also cancels any capture in progress) — this avoids any clash
+when the click button is set to Middle (the automation's own clicks would
+otherwise get picked up as a capture), and keeps things simple otherwise.
 
 ## Getting a pre-built .exe (GitHub Actions)
 

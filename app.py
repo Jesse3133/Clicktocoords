@@ -1,4 +1,5 @@
-"""ClickToCoords - cycles a middle-click pair across 3 saved screen coordinates.
+"""ClickToCoords - cycles a click pair (left/middle/right, your choice)
+across 3 saved screen coordinates.
 
 Runs as a local desktop app (Tkinter GUI). Press F6 anywhere (even when this
 window isn't focused) to toggle continuous automation on/off, or \\ to run
@@ -18,6 +19,8 @@ from pynput import keyboard, mouse
 from pynput.mouse import Button
 
 NUM_POINTS = 3
+BUTTON_CHOICES = {"Left": Button.left, "Middle": Button.middle, "Right": Button.right}
+DEFAULT_BUTTON_LABEL = "Middle"
 DEFAULT_INTERVAL = 1.0
 DEFAULT_CLICK_GAP = 0.1
 DEFAULT_CYCLE_DELAY = 10.0
@@ -90,6 +93,7 @@ cycle_wait_info = {"active": False, "deadline": 0.0}
 settings = {
     "points": [(0, 0) for _ in range(NUM_POINTS)],
     "enabled": [True] * NUM_POINTS,
+    "click_button": BUTTON_CHOICES[DEFAULT_BUTTON_LABEL],
     "interval": DEFAULT_INTERVAL,
     "click_gap": DEFAULT_CLICK_GAP,
     "cycle_delay": DEFAULT_CYCLE_DELAY,
@@ -127,6 +131,7 @@ def click_active_points(wait_after_last):
     if not active_points:
         return
 
+    click_button = settings["click_button"]
     click_gap = settings["click_gap"]
     interval = settings["interval"]
     cycle_delay = settings["cycle_delay"]
@@ -137,11 +142,11 @@ def click_active_points(wait_after_last):
             break
 
         mouse_controller.position = (x, y)
-        mouse_controller.click(Button.middle)
+        mouse_controller.click(click_button)
         wait_interruptible(jittered(click_gap))
         if not should_continue():
             break
-        mouse_controller.click(Button.middle)
+        mouse_controller.click(click_button)
 
         is_last = i == last_index
         if is_last:
@@ -196,7 +201,7 @@ class ClickToCoordsApp:
         main = ttk.Frame(root, padding=12)
         main.grid(row=0, column=0)
 
-        ttk.Label(main, text="Points (middle-clicked twice, in order)", font=("", 10, "bold")).grid(
+        ttk.Label(main, text="Points (clicked twice, in order)", font=("", 10, "bold")).grid(
             row=0, column=0, columnspan=4, sticky="w", pady=(0, 6)
         )
         ttk.Label(main, text="On", font=("", 10, "bold")).grid(row=0, column=4, pady=(0, 6))
@@ -241,7 +246,20 @@ class ClickToCoordsApp:
         sep = ttk.Separator(main, orient="horizontal")
         sep.grid(row=NUM_POINTS + 1, column=0, columnspan=5, sticky="ew", pady=8)
 
-        timer_row = NUM_POINTS + 2
+        button_row = NUM_POINTS + 2
+        ttk.Label(main, text="Click button:").grid(row=button_row, column=0, columnspan=2, sticky="w")
+        self.click_button_var = tk.StringVar(value=DEFAULT_BUTTON_LABEL)
+        click_button_combo = ttk.Combobox(
+            main,
+            textvariable=self.click_button_var,
+            values=list(BUTTON_CHOICES.keys()),
+            state="readonly",
+            width=8,
+        )
+        click_button_combo.grid(row=button_row, column=2, columnspan=2, sticky="w")
+        click_button_combo.bind("<<ComboboxSelected>>", lambda _e: self.sync_settings())
+
+        timer_row = button_row + 1
         ttk.Label(main, text="Delay between points (s):").grid(row=timer_row, column=0, columnspan=2, sticky="w")
         self.interval_var = tk.StringVar(value=str(DEFAULT_INTERVAL))
         ttk.Entry(main, textvariable=self.interval_var, width=8).grid(row=timer_row, column=2, columnspan=2, sticky="w")
@@ -354,6 +372,9 @@ class ClickToCoordsApp:
         settings["enabled"] = [
             enabled_var.get() if enabled_var is not None else True for enabled_var in self.enabled_vars
         ]
+        settings["click_button"] = BUTTON_CHOICES.get(
+            self.click_button_var.get(), BUTTON_CHOICES[DEFAULT_BUTTON_LABEL]
+        )
 
         try:
             settings["interval"] = max(0.0, float(self.interval_var.get()))
