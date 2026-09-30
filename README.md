@@ -99,8 +99,9 @@ Every push to `main` runs `.github/workflows/build-windows-exe.yml`, which
 builds on an actual `windows-latest` GitHub Actions runner and uploads the
 result. To grab it: open the repo's **Actions** tab → the latest "Build
 Windows exe" run → download the `ClickToCoords-windows-exe` artifact from
-the run summary (it's a zip containing `ClickToCoords.exe`). You can also
-trigger a build on demand from that workflow's page with **Run workflow**.
+the run summary — it's a zip containing `ClickToCoords.exe` and
+`create_shortcut.bat` together. You can also trigger a build on demand
+from that workflow's page with **Run workflow**.
 
 ## Building a standalone .exe (Windows)
 
@@ -113,9 +114,10 @@ on, it doesn't cross-compile.
 build.bat
 ```
 
-This installs the runtime and build dependencies and runs PyInstaller for
-you. The result is `dist\ClickToCoords.exe` — copy that one file wherever
-you like and run it directly.
+This installs the runtime and build dependencies, runs PyInstaller, and
+creates a desktop shortcut to the result (see below). The exe itself ends
+up at `dist\ClickToCoords.exe` — copy that one file wherever you like and
+run it directly if you'd rather skip the shortcut.
 
 To do it by hand instead:
 
@@ -134,6 +136,25 @@ Windows Defender / SmartScreen may flag a freshly built, unsigned exe on
 first run ("Windows protected your PC") since it isn't code-signed — choose
 "More info" → "Run anyway", or build it yourself from source as above so
 you know exactly what's in it.
+
+## Desktop shortcut
+
+`create_shortcut.bat` creates a `ClickToCoords.lnk` shortcut on your
+Desktop pointing at `ClickToCoords.exe`, so you (or whoever you hand the
+tool to) can just double-click an icon instead of hunting for the exe
+file each time.
+
+- **Building locally** — `build.bat` runs this automatically; no extra
+  step needed.
+- **Using the GitHub Actions download** — unzip the
+  `ClickToCoords-windows-exe` artifact, then double-click
+  `create_shortcut.bat` (it finds `ClickToCoords.exe` right next to it in
+  the same extracted folder).
+- **Anywhere else** — run `create_shortcut.bat "C:\path\to\ClickToCoords.exe"`
+  to point the shortcut at an exe in a different location.
+
+Re-running it just overwrites the existing shortcut, so it's safe to run
+again after moving or rebuilding the exe.
 
 ## Platform notes
 

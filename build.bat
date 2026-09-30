@@ -19,6 +19,11 @@ if errorlevel 1 goto :error
 
 echo.
 echo Build complete: dist\ClickToCoords.exe
+
+set "CTC_NO_PAUSE=1"
+call "%~dp0create_shortcut.bat" "%~dp0dist\ClickToCoords.exe"
+REM A failed shortcut isn't a build failure - the exe itself is what matters.
+
 goto :eof
 
 :error

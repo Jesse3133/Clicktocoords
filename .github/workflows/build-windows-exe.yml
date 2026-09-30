@@ -7,6 +7,7 @@ on:
       - "app.py"
       - "requirements.txt"
       - "requirements-build.txt"
+      - "create_shortcut.bat"
       - ".github/workflows/build-windows-exe.yml"
   workflow_dispatch: {}
 
@@ -28,8 +29,12 @@ jobs:
       - name: Build exe
         run: pyinstaller --onefile --windowed --name ClickToCoords app.py
 
+      - name: Bundle desktop-shortcut helper with the exe
+        run: copy create_shortcut.bat dist\create_shortcut.bat
+        shell: cmd
+
       - name: Upload exe artifact
         uses: actions/upload-artifact@v4
         with:
           name: ClickToCoords-windows-exe
-          path: dist/ClickToCoords.exe
+          path: dist/
