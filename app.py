@@ -334,6 +334,9 @@ class ClickToCoordsApp:
         self.dark_mode_var = tk.BooleanVar(value=initial_dark)
         self.apply_theme(dark=initial_dark)
 
+        saved_points = self.config.get("points")
+        saved_enabled = self.config.get("enabled")
+
         main = ttk.Frame(root, padding=12)
         main.grid(row=0, column=0)
 
@@ -344,8 +347,16 @@ class ClickToCoordsApp:
 
         for i in range(NUM_POINTS):
             row = i + 1
-            x_var = tk.StringVar(value="0")
-            y_var = tk.StringVar(value="0")
+            default_x, default_y = "0", "0"
+            if (
+                isinstance(saved_points, list)
+                and i < len(saved_points)
+                and isinstance(saved_points[i], list)
+                and len(saved_points[i]) == 2
+            ):
+                default_x, default_y = str(saved_points[i][0]), str(saved_points[i][1])
+            x_var = tk.StringVar(value=default_x)
+            y_var = tk.StringVar(value=default_y)
             self.point_x_vars.append(x_var)
             self.point_y_vars.append(y_var)
 
@@ -373,18 +384,28 @@ class ClickToCoordsApp:
             # Point 1 is always active (the tool needs at least one point);
             # points 2 and 3 can be turned off to run with fewer points.
             if i > 0:
-                enabled_var = tk.BooleanVar(value=True)
+                default_enabled = True
+                if isinstance(saved_enabled, list) and i < len(saved_enabled):
+                    default_enabled = bool(saved_enabled[i])
+                enabled_var = tk.BooleanVar(value=default_enabled)
                 self.enabled_vars[i] = enabled_var
                 ttk.Checkbutton(
                     main, variable=enabled_var, command=lambda idx=i: self.on_enabled_toggle(idx)
                 ).grid(row=row, column=4)
+                if not default_enabled:
+                    x_entry.configure(state="disabled")
+                    y_entry.configure(state="disabled")
 
         sep = ttk.Separator(main, orient="horizontal")
         sep.grid(row=NUM_POINTS + 1, column=0, columnspan=5, sticky="ew", pady=8)
 
         button_row = NUM_POINTS + 2
         ttk.Label(main, text="Click button:").grid(row=button_row, column=0, columnspan=2, sticky="w")
-        self.click_button_var = tk.StringVar(value=DEFAULT_BUTTON_LABEL)
+        saved_click_button = self.config.get("click_button")
+        initial_click_button = (
+            saved_click_button if saved_click_button in BUTTON_CHOICES else DEFAULT_BUTTON_LABEL
+        )
+        self.click_button_var = tk.StringVar(value=initial_click_button)
         click_button_combo = ttk.Combobox(
             main,
             textvariable=self.click_button_var,
@@ -397,28 +418,28 @@ class ClickToCoordsApp:
 
         timer_row = button_row + 1
         ttk.Label(main, text="Delay between points (s):").grid(row=timer_row, column=0, columnspan=2, sticky="w")
-        self.interval_var = tk.StringVar(value=str(DEFAULT_INTERVAL))
+        self.interval_var = tk.StringVar(value=self._saved_str("interval", DEFAULT_INTERVAL))
         ttk.Entry(main, textvariable=self.interval_var, width=8).grid(row=timer_row, column=2, columnspan=2, sticky="w")
         self.interval_var.trace_add("write", lambda *_a: self.sync_settings())
 
         gap_row = timer_row + 1
         ttk.Label(main, text="Delay between the 2 clicks (s):").grid(row=gap_row, column=0, columnspan=2, sticky="w")
-        self.click_gap_var = tk.StringVar(value=str(DEFAULT_CLICK_GAP))
+        self.click_gap_var = tk.StringVar(value=self._saved_str("click_gap", DEFAULT_CLICK_GAP))
         ttk.Entry(main, textvariable=self.click_gap_var, width=8).grid(row=gap_row, column=2, columnspan=2, sticky="w")
         self.click_gap_var.trace_add("write", lambda *_a: self.sync_settings())
 
         cycle_row = gap_row + 1
         ttk.Label(main, text="Delay after full set (s):").grid(row=cycle_row, column=0, columnspan=2, sticky="w")
-        self.cycle_delay_var = tk.StringVar(value=str(DEFAULT_CYCLE_DELAY))
+        self.cycle_delay_var = tk.StringVar(value=self._saved_str("cycle_delay", DEFAULT_CYCLE_DELAY))
         ttk.Entry(main, textvariable=self.cycle_delay_var, width=8).grid(row=cycle_row, column=2, columnspan=2, sticky="w")
         self.cycle_delay_var.trace_add("write", lambda *_a: self.sync_settings())
 
         jitter_row = cycle_row + 1
         ttk.Label(main, text="Random jitter added (s):").grid(row=jitter_row, column=0, columnspan=2, sticky="w")
-        self.jitter_min_var = tk.StringVar(value=str(DEFAULT_JITTER_MIN))
+        self.jitter_min_var = tk.StringVar(value=self._saved_str("jitter_min", DEFAULT_JITTER_MIN))
         ttk.Entry(main, textvariable=self.jitter_min_var, width=5).grid(row=jitter_row, column=2, sticky="w")
         ttk.Label(main, text="to").grid(row=jitter_row, column=3)
-        self.jitter_max_var = tk.StringVar(value=str(DEFAULT_JITTER_MAX))
+        self.jitter_max_var = tk.StringVar(value=self._saved_str("jitter_max", DEFAULT_JITTER_MAX))
         ttk.Entry(main, textvariable=self.jitter_max_var, width=5).grid(row=jitter_row, column=4, sticky="w")
         self.jitter_min_var.trace_add("write", lambda *_a: self.sync_settings())
         self.jitter_max_var.trace_add("write", lambda *_a: self.sync_settings())
@@ -446,13 +467,13 @@ class ClickToCoordsApp:
         # intercept the automation's own clicks on Windows even with the
         # click-through safeguards in place, so reliable clicking (the
         # app's actual purpose) takes priority - this is opt-in.
-        self.show_dots_var = tk.BooleanVar(value=False)
+        self.show_dots_var = tk.BooleanVar(value=bool(self.config.get("show_dots", False)))
         ttk.Checkbutton(
             main, text="Show target dots", variable=self.show_dots_var, command=self._update_dots
         ).grid(row=dots_row, column=0, columnspan=5, sticky="w")
 
         restore_mouse_row = dots_row + 1
-        self.restore_mouse_var = tk.BooleanVar(value=False)
+        self.restore_mouse_var = tk.BooleanVar(value=bool(self.config.get("restore_mouse", False)))
         ttk.Checkbutton(
             main,
             text="Return mouse after clicking",
@@ -570,6 +591,44 @@ class ClickToCoordsApp:
     def _cancel_capture_if(self, index):
         if self.capturing_index == index:
             self._cancel_capture()
+
+    def _saved_str(self, key, default):
+        # Used for the delay/jitter Entry fields: keeps the value the user
+        # actually typed (e.g. ".1") rather than a re-parsed float, but
+        # falls back to the default if the saved config has something
+        # that isn't a valid number (missing, corrupted, hand-edited).
+        value = self.config.get(key)
+        if value is None:
+            return str(default)
+        try:
+            float(value)
+        except (TypeError, ValueError):
+            return str(default)
+        return str(value)
+
+    def snapshot_settings(self):
+        return {
+            "dark_mode": self.dark_mode_var.get(),
+            "show_dots": self.show_dots_var.get(),
+            "restore_mouse": self.restore_mouse_var.get(),
+            "click_button": self.click_button_var.get(),
+            "interval": self.interval_var.get(),
+            "click_gap": self.click_gap_var.get(),
+            "cycle_delay": self.cycle_delay_var.get(),
+            "jitter_min": self.jitter_min_var.get(),
+            "jitter_max": self.jitter_max_var.get(),
+            "points": [
+                [self.point_x_vars[i].get(), self.point_y_vars[i].get()] for i in range(NUM_POINTS)
+            ],
+            "enabled": [
+                enabled_var.get() if enabled_var is not None else True
+                for enabled_var in self.enabled_vars
+            ],
+        }
+
+    def save_all_settings(self):
+        self.config.update(self.snapshot_settings())
+        save_config(self.config)
 
     def sync_settings(self):
         points = []
@@ -750,6 +809,7 @@ def main():
     def on_close():
         running_event.clear()
         app._cancel_capture()
+        app.save_all_settings()
         gui_app_ref["app"] = None
         hotkeys.stop()
         root.destroy()
