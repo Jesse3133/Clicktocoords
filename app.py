@@ -215,6 +215,7 @@ settings = {
     "cycle_delay": DEFAULT_CYCLE_DELAY,
     "jitter_min": DEFAULT_JITTER_MIN,
     "jitter_max": DEFAULT_JITTER_MAX,
+    "restore_mouse": False,
 }
 
 
@@ -247,6 +248,16 @@ def click_active_points(wait_after_last):
     if not active_points:
         return
 
+    restore_mouse = settings["restore_mouse"]
+    origin_position = mouse_controller.position if restore_mouse else None
+    restored = False
+
+    def restore_mouse_now():
+        nonlocal restored
+        if restore_mouse and not restored:
+            mouse_controller.position = origin_position
+            restored = True
+
     click_button = settings["click_button"]
     click_gap = settings["click_gap"]
     interval = settings["interval"]
@@ -266,9 +277,13 @@ def click_active_points(wait_after_last):
 
         is_last = i == last_index
         if is_last:
-            # After the last point in the set, wait the longer cycle delay
-            # before looping back to the first point - but only when a
-            # continuous run will actually follow (single-shot stops here).
+            # Put the mouse back where it was before this pass started,
+            # then wait the longer cycle delay before looping back to the
+            # first point - but only when a continuous run will actually
+            # follow (single-shot stops here). Restoring before the wait
+            # (rather than after) means the mouse is free for the whole
+            # gap between passes, not just for an instant at the end.
+            restore_mouse_now()
             if wait_after_last:
                 delay = jittered(cycle_delay)
                 cycle_wait_info["deadline"] = time.time() + delay
@@ -277,6 +292,10 @@ def click_active_points(wait_after_last):
                 cycle_wait_info["active"] = False
         else:
             wait_interruptible(jittered(interval))
+
+    # Safety net: if the loop was interrupted before reaching the last
+    # point, restore here instead (a no-op if it already happened above).
+    restore_mouse_now()
 
 
 def worker_loop():
@@ -432,7 +451,16 @@ class ClickToCoordsApp:
             main, text="Show target dots", variable=self.show_dots_var, command=self._update_dots
         ).grid(row=dots_row, column=0, columnspan=5, sticky="w")
 
-        countdown_row = dots_row + 1
+        restore_mouse_row = dots_row + 1
+        self.restore_mouse_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            main,
+            text="Return mouse after clicking",
+            variable=self.restore_mouse_var,
+            command=self.sync_settings,
+        ).grid(row=restore_mouse_row, column=0, columnspan=5, sticky="w")
+
+        countdown_row = restore_mouse_row + 1
         self.countdown_var = tk.StringVar(value="")
         self.countdown_label = ttk.Label(main, textvariable=self.countdown_var, font=("", 9))
         self.countdown_label.grid(row=countdown_row, column=0, columnspan=5, sticky="e", pady=(6, 0))
@@ -559,6 +587,7 @@ class ClickToCoordsApp:
         settings["click_button"] = BUTTON_CHOICES.get(
             self.click_button_var.get(), BUTTON_CHOICES[DEFAULT_BUTTON_LABEL]
         )
+        settings["restore_mouse"] = self.restore_mouse_var.get()
 
         try:
             settings["interval"] = max(0.0, float(self.interval_var.get()))

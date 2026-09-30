@@ -32,6 +32,14 @@ hotkeys to start/stop it or run it once.
   application on some Windows setups, so reliable clicking takes
   priority — turn on **Show target dots** to enable the markers, and back
   off again if you notice clicks not landing.
+- A **Return mouse after clicking** checkbox (off by default) saves your
+  cursor's position right before each pass starts moving it, and puts it
+  back there once the pass's last click is done — before the delay-after-
+  full-set wait begins, so your mouse is free to use for that whole gap,
+  not just returned for an instant. If you move it yourself during that
+  gap, the next pass picks up from wherever you left it, not the original
+  spot. Also restores it if you stop the automation partway through a
+  pass.
 - Three adjustable delays:
   - **Delay between points** — spacing between points within one set.
   - **Delay between the 2 clicks** at the same point.
